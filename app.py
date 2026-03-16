@@ -7,6 +7,21 @@ from langchain.schema import Document
 from src.agents.graph import build_research_graph
 from src.rag.pipeline import RAGPipeline
 
+def is_greeting(q: str) -> bool:
+    if not q:
+        return False
+    q = q.lower().strip()
+    greetings = {
+        "hi", "hello", "hey", "hii", "heyy",
+        "good morning", "good afternoon", "good evening",
+        "sup", "yo"
+    }
+    if q in greetings:
+        return True
+    for g in greetings:
+        if q.startswith(g + " "):
+            return True
+    return False
 logging.basicConfig(level=logging.INFO)
 
 st.set_page_config(
@@ -71,6 +86,22 @@ query = st.chat_input("Ask a research question...")
 if query:
     with st.chat_message("user"):
         st.write(query)
+
+    if is_greeting(query):
+        reply = (
+            "Hi! I'm your **LLM Research Assistant**.\n\n"
+            "You can:\n"
+            "- Ask a research question\n"
+            "- Upload a PDF or text document to analyze\n"
+            "- Get structured answers with citations\n\n"
+            "Example: *Explain transformers in NLP*"
+        )
+
+        with st.chat_message("assistant"):
+            st.markdown(reply)
+
+        st.session_state.history.append({"query": query, "answer": reply})
+        st.stop()
 
     with st.chat_message("assistant"):
         steps_container = st.empty()
