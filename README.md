@@ -1,206 +1,166 @@
-# 🔬 LLM Research Assistant
+# LLM Research Assistant
 
-> A production-grade **multi-agent research pipeline** powered by GPT-4o, LangGraph, and Hybrid RAG (FAISS + BM25).
+A multi-agent research pipeline that takes a question and returns a cited, structured answer by autonomously searching your documents, arXiv, and Wikipedia.
 
-[![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://python.org)
-[![LangGraph](https://img.shields.io/badge/LangGraph-0.2-green)](https://github.com/langchain-ai/langgraph)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi)](https://fastapi.tiangolo.com)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+Built this because I kept doing the same manual loop — search arXiv, skim papers, check Wikipedia for background, paste it all into a doc. Wanted to see how far LLM agents could automate that loop, including catching their own bad answers.
 
 ---
 
-## 🧠 What It Does
+## Demo
+Demo Image 1:
 
-Given any research question, this system spins up a **4-agent pipeline** that:
+Demo Image 2:
 
-1. **Plans** — decomposes your query into focused sub-questions
-2. **Researches** — autonomously calls RAG retrieval, arXiv, and Wikipedia in a tool-use loop
-3. **Critiques** — self-evaluates for hallucinations and gaps, loops back if needed
-4. **Synthesizes** — produces a structured answer with inline citations
+Demo Image 3:
 
 ---
 
-## 🏗️ Architecture
+## How it works
+
+Four agents run in sequence using LangGraph:
+
+**Planner** breaks your query into 3-5 sub-questions so the researcher stays focused.
+
+**Researcher** calls tools in a loop — hits your local document index first (FAISS + BM25), then arXiv for recent papers, then Wikipedia for background.
+
+**Critic** reads all the research notes and decides if the answer is solid or has gaps. If it finds problems it sends the researcher back. Getting this loop right was the trickiest part — early versions would approve everything even when the notes were empty.
+
+**Synthesizer** writes the final answer with numbered citations.
 
 ```
-User Query
-    │
-    ▼
-┌─────────────┐
-│   Planner   │  GPT-4o decomposes query → 3-5 sub-questions
-└──────┬──────┘
-       │
-┌──────▼──────────────────────────────────────────────────┐
-│                    Researcher Agent                      │
-│  ┌────────────┐  ┌──────────────┐  ┌─────────────────┐  │
-│  │ RAG (FAISS │  │ arXiv Search │  │ Wikipedia Search│  │
-│  │  + BM25)   │  │              │  │                 │  │
-│  └────────────┘  └──────────────┘  └─────────────────┘  │
-│         ↑ Tool calls loop until sufficient evidence      │
-└──────┬──────────────────────────────────────────────────┘
-       │
-┌──────▼──────┐
-│   Critic    │  Detects hallucinations/gaps → loops back if NEEDS_REVISION
-└──────┬──────┘
-       │
-┌──────▼──────┐
-│ Synthesizer │  Writes final structured answer with [1][2][3] citations
-└─────────────┘
+query → planner → researcher → tools
+                      ↓
+                   extract tool results
+                      ↓
+                   critic → (loop back if gaps found)
+                      ↓
+                 synthesizer → final answer
 ```
 
-### Key Technical Highlights
-
-| Feature | Implementation |
-|---|---|
-| **Orchestration** | LangGraph `StateGraph` with typed state and conditional routing |
-| **Dense Retrieval** | FAISS with OpenAI `text-embedding-3-small` |
-| **Sparse Retrieval** | BM25 (keyword matching) |
-| **Fusion** | Reciprocal Rank Fusion (RRF) merging dense + sparse results |
-| **Reflection Loop** | Critic agent routes back to researcher if evidence is insufficient |
-| **Persistence** | FAISS index saved to disk; reloaded on startup |
-| **API** | FastAPI with Pydantic v2 schemas |
-| **UI** | Streamlit with live agent step streaming |
-| **Deployment** | Docker + docker-compose ready |
+The RAG side uses hybrid retrieval — FAISS for semantic similarity and BM25 for keyword matching, merged with Reciprocal Rank Fusion. This catches things pure semantic search misses, especially exact terms and proper nouns.
 
 ---
 
-## 🚀 Quick Start
-
-### 1. Clone & Install
+## Setup
 
 ```bash
-git clone https://github.com/dhairya0402/llm-research-assistant.git
+git clone https://github.com/dhairyaa442/llm-research-assistant.git
 cd llm-research-assistant
-python -m venv venv && source venv/bin/activate
+
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
 pip install -r requirements.txt
-```
 
-### 2. Configure
-
-```bash
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+# add your OPENAI_API_KEY to .env
 ```
 
-### 3. Run the UI
-
+**Run the UI:**
 ```bash
 streamlit run app.py
 ```
 
-Open [http://localhost:8501](http://localhost:8501) and start researching.
-
-### 4. Run the API
-
+**Run the API:**
 ```bash
 uvicorn api:app --reload --port 8000
 ```
 
-API docs at [http://localhost:8000/docs](http://localhost:8000/docs)
-
-### 5. Docker (optional)
-
+**Docker:**
 ```bash
 docker-compose up --build
 ```
 
 ---
 
-## 💡 Example Queries
+## Ingesting your own documents
 
+Drop PDFs or text files into a folder and run:
+
+```bash
+python scripts/ingest_docs.py ./my_papers/
 ```
-"What are the key differences between RAG and fine-tuning for LLM knowledge injection?"
 
-"Summarize recent advances in LLM agent architectures and their limitations."
-
-"How does RLHF compare to DPO for aligning language models?"
-```
+Or upload directly in the Streamlit sidebar. The FAISS index saves to disk so you don't re-embed on every restart.
 
 ---
 
-## 📡 API Reference
+## API
 
-### `POST /research`
-
+`POST /research`
 ```json
-{
-  "query": "What is retrieval-augmented generation?"
-}
+{ "query": "How does RLHF compare to DPO for LLM alignment?" }
 ```
 
-**Response:**
+Returns:
 ```json
 {
-  "query": "What is retrieval-augmented generation?",
-  "answer": "## Retrieval-Augmented Generation (RAG)\n\nRAG is a technique...",
-  "sub_questions": ["What is RAG?", "How does RAG differ from fine-tuning?", "..."],
+  "answer": "...",
+  "sub_questions": ["What is RLHF?", "What is DPO?", "..."],
   "iterations": 2,
-  "elapsed_seconds": 14.3
+  "elapsed_seconds": 18.4
 }
 ```
 
-### `POST /ingest`
+`POST /ingest` — add documents programmatically
+`GET /health` — check index size and status
 
-```json
-{
-  "documents": [
-    { "content": "LangChain is a framework...", "source": "langchain_docs.txt" }
-  ]
-}
+---
+
+## Project structure
+
+```
+src/
+  agents/graph.py          — LangGraph state graph, all 4 agents + extract node
+  rag/pipeline.py          — FAISS + BM25 + RRF hybrid retrieval
+  tools/research_tools.py  — arXiv, Wikipedia, RAG, citation tools
+  utils/helpers.py         — logging, formatting helpers
+  config.py                — env-based settings
+
+scripts/
+  ingest_docs.py           — bulk ingest PDFs/TXT from a folder
+  run_research.py          — CLI for running queries without the UI
+
+tests/
+  test_rag_and_tools.py    — unit tests for RAG logic and tools
+
+app.py                     — Streamlit frontend
+api.py                     — FastAPI backend
 ```
 
 ---
 
-## 🧪 Tests
+## Config
+
+| Variable | Default | What it does |
+|---|---|---|
+| `OPENAI_API_KEY` | — | Required |
+| `MODEL_NAME` | `gpt-4o` | Swap to `gpt-4o-mini` to cut costs |
+| `MAX_ITERATIONS` | `10` | How many times critic can send researcher back |
+| `CHUNK_SIZE` | `512` | Token chunk size when splitting docs |
+| `CHUNK_OVERLAP` | `64` | Overlap between chunks |
+| `FAISS_INDEX_PATH` | `./data/faiss_index` | Where the index is saved |
+
+---
+
+## Tests
 
 ```bash
 pytest tests/ -v
 ```
 
-Tests cover:
-- RAG chunking and RRF fusion logic
-- Tool output formatting
-- Graph compilation smoke test
+---
+
+## Known limitations
+
+- Wikipedia tool hits disambiguation errors on niche topics — it tries the first suggestion but sometimes gets the wrong page
+- FAISS index isn't safe for concurrent writes, don't ingest and query simultaneously in production
+- The critic occasionally approves thin research on very obscure topics where all three tools return limited results
+- No streaming token output from the API yet — the full answer comes back at once
+- Cold start is slow on first query while the embedding model initializes
 
 ---
 
-## 📁 Project Structure
+## License
 
-```
-llm-research-assistant/
-├── src/
-│   ├── agents/
-│   │   └── graph.py          # LangGraph multi-agent graph
-│   ├── rag/
-│   │   └── pipeline.py       # FAISS + BM25 hybrid RAG
-│   ├── tools/
-│   │   └── research_tools.py # arXiv, Wikipedia, RAG, citation tools
-│   └── config.py             # Centralized settings
-├── tests/
-│   └── test_rag_and_tools.py
-├── app.py                    # Streamlit UI
-├── api.py                    # FastAPI backend
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-└── .env.example
-```
-
----
-
-## 🔧 Configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `OPENAI_API_KEY` | — | Required. Your OpenAI API key. |
-| `MODEL_NAME` | `gpt-4o` | LLM model to use |
-| `MAX_ITERATIONS` | `10` | Max researcher→critic loops |
-| `CHUNK_SIZE` | `512` | Token chunk size for splitting |
-| `CHUNK_OVERLAP` | `64` | Overlap between chunks |
-| `FAISS_INDEX_PATH` | `./data/faiss_index` | Where to persist the vector index |
-
----
-
-## 📄 License
-
-MIT — feel free to use, modify, and build on this.
+MIT
