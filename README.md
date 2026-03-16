@@ -7,11 +7,12 @@ Built this because I kept doing the same manual loop — search arXiv, skim pape
 ---
 
 ## Demo
-Demo Image 1:
 
-Demo Image 2:
+![Agent pipeline running](docs/images/demo1.png)
 
-Demo Image 3:
+![RAG with uploaded document](docs/images/demo2.png)
+
+![Cited answer with references](docs/images/demo3.png)
 
 ---
 
